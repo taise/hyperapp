@@ -1,3 +1,7 @@
+/*
+ * Model of html tag it self & (a part of) the dom tree.
+ * Args design was followed to transform-react-jsx of babel plugin
+ */
 export function h(name, attributes /*, ...rest*/) {
   var node
   var rest = []
@@ -6,16 +10,37 @@ export function h(name, attributes /*, ...rest*/) {
 
   while (length-- > 2) rest.push(arguments[length])
 
+  // children nodes
   while (rest.length) {
+    /*
+     * ```
+     * > var node = ""
+     * undefined
+     * > node.pop
+     * undefined
+     * > node = []
+     * []
+     * > node.pop
+     * [Function: pop]
+     * ```
+     */
     if ((node = rest.pop()) && node.pop /* Array? */) {
       for (length = node.length; length--; ) {
         rest.push(node[length])
       }
+    /*
+     * ```
+     * > undefined != null
+     * false
+     * ```
+     * not null & not undefined & not boolean
+     */
     } else if (node != null && node !== true && node !== false) {
       children.push(node)
     }
   }
 
+  // return  it self as function or node
   return typeof name === "function"
     ? name(attributes || {}, children)
     : {
@@ -31,6 +56,7 @@ export function app(state, actions, view, container) {
   var firstRender = true
   var lifecycleStack = []
   var rootElement = (container && container.children[0]) || null
+  // Create virtual dom tree from container for all of under the root element.
   var oldNode = rootElement && toVNode(rootElement, [].map)
   var globalState = clone(state)
   var wiredActions = clone(actions)
@@ -52,10 +78,11 @@ export function app(state, actions, view, container) {
   }
 
   function render() {
-    renderLock = !renderLock
+    // end Lock
+    renderLock = !renderLock // (expect )set false
 
     var next = view(globalState, wiredActions)
-    if (container && !renderLock) {
+    if (container && !renderLock) { // container exists & unlock
       rootElement = patch(container, rootElement, oldNode, (oldNode = next))
       firstRender = false
     }
@@ -63,13 +90,17 @@ export function app(state, actions, view, container) {
     while ((next = lifecycleStack.pop())) next()
   }
 
+  // Triggered only when app was initialized or state was changed.
   function scheduleRender() {
-    if (!renderLock) {
-      renderLock = !renderLock
+    if (!renderLock) { // false
+      // begin Lock
+      renderLock = !renderLock // set true
+      // set next render
       setTimeout(render)
     }
   }
 
+  // If you do NOT want to use the "pass by reference"
   function clone(target, source) {
     var obj = {}
 
@@ -96,19 +127,33 @@ export function app(state, actions, view, container) {
     return source
   }
 
+  // "wire" is used in the meaning of "link"
   function wireStateToActions(path, state, actions) {
     for (var key in actions) {
       typeof actions[key] === "function"
         ? (function(key, action) {
+            // action was registered with scheduleRender efficiently
             actions[key] = function(data) {
               if (typeof (data = action(data)) === "function") {
-                data = data(get(path, globalState), actions)
+                /*
+                 * ```
+                 * > var state = { count: 0 }
+                 * undefined
+                 * > var actions = { up: value => state => ({ count: state.count + value }) }
+                 * undefined
+                 * > state = actions.up(1)(state)
+                 * { count: 1 }
+                 * > state = actions.up(1)(state)
+                 * { count: 2 }
+                 * ```
+                 */
+                data = data(get(path, globalState), actions) // eval action
               }
 
               if (
                 data &&
-                data !== (state = get(path, globalState)) &&
-                !data.then // Promise
+                data !== (state = get(path, globalState)) && // when state was changed
+                !data.then // not Promise
               ) {
                 scheduleRender(
                   (globalState = set(path, clone(state, data), globalState))
@@ -182,6 +227,7 @@ export function app(state, actions, view, container) {
   function updateElement(element, oldAttributes, attributes, isSVG) {
     for (var name in clone(oldAttributes, attributes)) {
       if (
+        // skip update when atrributes value isn't changed
         attributes[name] !==
         (name === "value" || name === "checked"
           ? element[name]
@@ -231,10 +277,10 @@ export function app(state, actions, view, container) {
   }
 
   function patch(parent, element, oldNode, node, isSVG, nextSibling) {
-    if (node === oldNode) {
-    } else if (oldNode == null) {
+    if (node === oldNode) { // nothing to do
+    } else if (oldNode == null) { // create new one
       element = parent.insertBefore(createElement(node, isSVG), element)
-    } else if (node.nodeName && node.nodeName === oldNode.nodeName) {
+    } else if (node.nodeName && node.nodeName === oldNode.nodeName) { // update if exists
       updateElement(
         element,
         oldNode.attributes,
